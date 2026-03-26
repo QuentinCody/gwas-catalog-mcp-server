@@ -14,7 +14,7 @@ interface GwasEnv {
 }
 
 export class MyMCP extends McpAgent {
-    server: any = new McpServer({
+    server = new McpServer({
         name: "gwas-catalog",
         version: "0.1.0",
     });
