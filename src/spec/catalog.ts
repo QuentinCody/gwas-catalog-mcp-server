@@ -1,12 +1,17 @@
 /**
- * EBI GWAS Catalog REST API v2 catalog — built from the OpenAPI 3.0 spec at
+ * EBI GWAS Catalog REST API v2 + PGS Catalog REST API catalog
+ *
+ * GWAS Catalog: built from the OpenAPI 3.0 spec at
  * https://www.ebi.ac.uk/gwas/rest/api/v2/rest-api-doc.yaml
  *
- * Covers 26 endpoints across 10 categories: studies, associations, SNPs,
- * genes, EFO traits, publications, ancestries, genomic contexts, loci,
- * body-of-works, and unpublished studies.
+ * PGS Catalog: Polygenic Score Catalog REST API at
+ * https://www.pgscatalog.org/rest/
  *
- * v2 key differences from v1:
+ * Covers 35 endpoints across 11 categories: studies, associations, SNPs,
+ * genes, EFO traits, publications, ancestries, genomic contexts, loci,
+ * body-of-works, unpublished studies, and PGS (polygenic scores).
+ *
+ * GWAS v2 key differences from v1:
  *   - All paths prefixed with /v2/
  *   - Search endpoints removed — use query params on collection endpoints
  *   - Collections still in `_embedded.{resourceType}` (HAL+JSON)
@@ -16,16 +21,19 @@
  *   - Sort uses separate `sort` (enum) + `direction` (asc|desc) params
  *   - Parameters use snake_case (pubmed_id, accession_id, rs_id, etc.)
  *   - Rate limit: 15 queries/second
+ *
+ * PGS Catalog endpoints use /pgs/* prefix in this catalog, which the adapter
+ * routes to https://www.pgscatalog.org/rest/. PGS pagination uses limit/offset.
  */
 
 import type { ApiCatalog } from "@bio-mcp/shared/codemode/catalog";
 
 export const gwasCatalog: ApiCatalog = {
-    name: "EBI GWAS Catalog REST API v2",
+    name: "EBI GWAS Catalog + PGS Catalog REST API",
     baseUrl: "https://www.ebi.ac.uk/gwas/rest/api",
     version: "2.0",
     auth: "none",
-    endpointCount: 26,
+    endpointCount: 35,
     notes:
         "- HAL+JSON response format: collections are in `_embedded.{resourceType}` (e.g. `_embedded.studies`, `_embedded.snps`, `_embedded.associations`)\n" +
         "- Pagination: `page` (0-indexed), `size` (default 20). Sort uses separate `sort` and `direction` params.\n" +
@@ -41,7 +49,15 @@ export const gwasCatalog: ApiCatalog = {
         "- Single-resource endpoints return the resource object directly (not wrapped in _embedded)\n" +
         "- Non-paginated sub-resource collections (ancestries, genomic-contexts, loci) wrap in `_embedded` but have no `page` object\n" +
         "- v1 is deprecated and will be retired no later than May 2026\n" +
-        "- Some endpoints (genes/{name}, metadata) may return 500 intermittently",
+        "- Some endpoints (genes/{name}, metadata) may return 500 intermittently\n" +
+        "- PGS Catalog endpoints (/pgs/*): polygenic risk scores, performance evaluations, traits — proxied to pgscatalog.org/rest/\n" +
+        "- PGS pagination uses `limit` (default 100) and `offset` (default 0) — NOT page/size\n" +
+        "- PGS IDs follow patterns: PGS000001 (scores), PGP000001 (publications), PPM000001 (performance metrics), PSS000001 (sample sets)\n" +
+        "- PGS responses wrap results in `results` array with `count`, `next`, `previous` pagination fields\n" +
+        "- PGS performance metrics include: AUC, OR, HR, beta, C-index — reported per ancestry group\n" +
+        "- PGS trait IDs use EFO ontology (e.g. EFO_0001645 for coronary heart disease)\n" +
+        "- 5,296+ published polygenic scores and growing\n" +
+        "- Common PGS workflow: search traits → find scores for trait → get performance metrics → check publication details",
     endpoints: [
         // === Studies ===
         {
@@ -970,6 +986,233 @@ export const gwasCatalog: ApiCatalog = {
                     type: "string",
                     required: true,
                     description: "Ancestry record ID",
+                },
+            ],
+        },
+
+        // === PGS Catalog (Polygenic Scores) ===
+        {
+            method: "GET",
+            path: "/pgs/score/all",
+            summary:
+                "List all polygenic scores (paginated). Returns PGS IDs, trait names, variant counts, and publication references. Use limit/offset for pagination.",
+            category: "pgs",
+            queryParams: [
+                {
+                    name: "limit",
+                    type: "number",
+                    required: false,
+                    description: "Number of results per page (default 100)",
+                },
+                {
+                    name: "offset",
+                    type: "number",
+                    required: false,
+                    description: "Starting position for pagination (default 0)",
+                },
+            ],
+        },
+        {
+            method: "GET",
+            path: "/pgs/score/search",
+            summary:
+                "Search polygenic scores by EFO trait ID. Returns matching PGS scores with variant counts, trait mappings, methods, and genome builds. Use trait/search first to find EFO IDs.",
+            category: "pgs",
+            queryParams: [
+                {
+                    name: "trait_id",
+                    type: "string",
+                    required: true,
+                    description:
+                        "EFO trait ID (e.g. EFO_0001645 for coronary heart disease, EFO_0000305 for breast cancer)",
+                },
+                {
+                    name: "limit",
+                    type: "number",
+                    required: false,
+                    description: "Number of results per page (default 100)",
+                },
+                {
+                    name: "offset",
+                    type: "number",
+                    required: false,
+                    description: "Starting position for pagination (default 0)",
+                },
+            ],
+        },
+        {
+            method: "GET",
+            path: "/pgs/score/{pgs_id}",
+            summary:
+                "Get polygenic score detail by PGS ID (e.g. PGS000001). Returns variant count, trait mapping (EFO), scoring method, genome build, publication, and performance metrics.",
+            category: "pgs",
+            pathParams: [
+                {
+                    name: "pgs_id",
+                    type: "string",
+                    required: true,
+                    description:
+                        "PGS score ID (e.g. PGS000001, PGS000018)",
+                },
+            ],
+        },
+        {
+            method: "GET",
+            path: "/pgs/trait/all",
+            summary:
+                "List all traits in the PGS Catalog (paginated). Returns EFO trait IDs, names, descriptions, categories, and counts of associated scores.",
+            category: "pgs",
+            queryParams: [
+                {
+                    name: "limit",
+                    type: "number",
+                    required: false,
+                    description: "Number of results per page (default 100)",
+                },
+                {
+                    name: "offset",
+                    type: "number",
+                    required: false,
+                    description: "Starting position for pagination (default 0)",
+                },
+            ],
+        },
+        {
+            method: "GET",
+            path: "/pgs/trait/search",
+            summary:
+                "Search PGS Catalog by trait/disease name. Returns matching EFO traits with associated polygenic scores, descriptions, and mapped categories.",
+            category: "pgs",
+            queryParams: [
+                {
+                    name: "term",
+                    type: "string",
+                    required: true,
+                    description:
+                        "Trait or disease name to search (e.g. 'breast cancer', 'type 2 diabetes', 'coronary artery disease')",
+                },
+                {
+                    name: "limit",
+                    type: "number",
+                    required: false,
+                    description: "Number of results per page (default 100)",
+                },
+                {
+                    name: "offset",
+                    type: "number",
+                    required: false,
+                    description: "Starting position for pagination (default 0)",
+                },
+            ],
+        },
+        {
+            method: "GET",
+            path: "/pgs/trait/{trait_id}",
+            summary:
+                "Get trait details by EFO ID. Returns trait name, description, mapped categories, and list of associated polygenic scores.",
+            category: "pgs",
+            pathParams: [
+                {
+                    name: "trait_id",
+                    type: "string",
+                    required: true,
+                    description:
+                        "EFO trait ID (e.g. EFO_0001645, MONDO_0005180)",
+                },
+            ],
+        },
+        {
+            method: "GET",
+            path: "/pgs/performance/search",
+            summary:
+                "Search performance evaluations for polygenic scores. Returns evaluation metrics (AUROC, C-index, OR per SD, HR, beta, R2), sample demographics, ancestry breakdowns, and cohort details.",
+            category: "pgs",
+            queryParams: [
+                {
+                    name: "pgs_id",
+                    type: "string",
+                    required: false,
+                    description:
+                        "PGS score ID to get evaluations for (e.g. PGS000001). Preferred search parameter.",
+                },
+                {
+                    name: "pgp_id",
+                    type: "string",
+                    required: false,
+                    description:
+                        "PGS publication ID (e.g. PGP000001). Alternative to pgs_id.",
+                },
+                {
+                    name: "limit",
+                    type: "number",
+                    required: false,
+                    description: "Number of results per page (default 100)",
+                },
+                {
+                    name: "offset",
+                    type: "number",
+                    required: false,
+                    description: "Starting position for pagination (default 0)",
+                },
+            ],
+        },
+        {
+            method: "GET",
+            path: "/pgs/publication/search",
+            summary:
+                "Search PGS Catalog publications. Filter by PGS score ID to find publications that developed or evaluated a score. Returns title, authors, journal, DOI, and associated PGS IDs.",
+            category: "pgs",
+            queryParams: [
+                {
+                    name: "pgs_id",
+                    type: "string",
+                    required: false,
+                    description:
+                        "PGS score ID to find publications for (e.g. PGS000001)",
+                },
+                {
+                    name: "limit",
+                    type: "number",
+                    required: false,
+                    description: "Number of results per page (default 100)",
+                },
+                {
+                    name: "offset",
+                    type: "number",
+                    required: false,
+                    description: "Starting position for pagination (default 0)",
+                },
+            ],
+        },
+        {
+            method: "GET",
+            path: "/pgs/publication/{pgp_id}",
+            summary:
+                "Get publication details by PGP ID. Returns title, authors, journal, DOI, PubMed ID, and list of associated PGS scores developed or evaluated in the publication.",
+            category: "pgs",
+            pathParams: [
+                {
+                    name: "pgp_id",
+                    type: "string",
+                    required: true,
+                    description:
+                        "PGS publication ID (e.g. PGP000001, PGP000119)",
+                },
+            ],
+        },
+        {
+            method: "GET",
+            path: "/pgs/sample_set/{pss_id}",
+            summary:
+                "Get sample set details by PSS ID. Returns sample demographics, ancestry composition, cohort names, and sample sizes used in PGS development or evaluation.",
+            category: "pgs",
+            pathParams: [
+                {
+                    name: "pss_id",
+                    type: "string",
+                    required: true,
+                    description:
+                        "PGS sample set ID (e.g. PSS000001, PSS000042)",
                 },
             ],
         },

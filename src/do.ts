@@ -1,12 +1,14 @@
 /**
- * GwasDataDO — Durable Object for staging large GWAS Catalog v2 responses.
+ * GwasDataDO — Durable Object for staging large GWAS Catalog v2 + PGS Catalog responses.
  *
  * Extends RestStagingDO with schema hints for studies, associations,
  * SNPs, genes, traits, publications, ancestries, genomic contexts,
- * loci, body-of-works, and unpublished studies from the EBI GWAS Catalog API v2.
+ * loci, body-of-works, unpublished studies from the EBI GWAS Catalog API v2,
+ * and polygenic scores, performance metrics, publications, and traits from
+ * the PGS Catalog API.
  *
- * v2 response format: HAL+JSON with `_embedded.{type}` collections.
- * Embedded keys use snake_case: `snps`, `efo_traits`, `genomic_contexts`, etc.
+ * GWAS v2 response format: HAL+JSON with `_embedded.{type}` collections.
+ * PGS response format: `{ count, next, previous, results: [...] }`.
  */
 
 import { RestStagingDO } from "@bio-mcp/shared/staging/rest-staging-do";
@@ -169,6 +171,84 @@ export class GwasDataDO extends RestStagingDO {
                     "ancestry_category",
                     "sample_size",
                 ],
+            };
+        }
+
+        // --- PGS Catalog responses (results array, not _embedded) ---
+
+        // PGS paginated responses: { count, next, previous, results: [...] }
+        if (Array.isArray(obj.results) && typeof obj.count === "number") {
+            const first = (obj.results as unknown[])[0];
+            if (first && typeof first === "object") {
+                const f = first as Record<string, unknown>;
+
+                // PGS Scores: results contain id starting with "PGS"
+                if (typeof f.id === "string" && (f.id as string).startsWith("PGS")) {
+                    return {
+                        tableName: "pgs_scores",
+                        indexes: [
+                            "id",
+                            "name",
+                            "variants_number",
+                            "trait_reported",
+                        ],
+                    };
+                }
+
+                // PGS Performance metrics: results contain id starting with "PPM"
+                if (typeof f.id === "string" && (f.id as string).startsWith("PPM")) {
+                    return {
+                        tableName: "pgs_performance",
+                        indexes: [
+                            "id",
+                            "associated_pgs_id",
+                            "phenotyping_reported",
+                            "publication",
+                        ],
+                    };
+                }
+
+                // PGS Publications: results contain id starting with "PGP"
+                if (typeof f.id === "string" && (f.id as string).startsWith("PGP")) {
+                    return {
+                        tableName: "pgs_publications",
+                        indexes: [
+                            "id",
+                            "title",
+                            "doi",
+                            "PMID",
+                        ],
+                    };
+                }
+
+                // PGS Traits: results have id as EFO ID (e.g. EFO_0001645)
+                if (typeof f.id === "string" && (f.id as string).includes("_") && typeof f.label === "string") {
+                    return {
+                        tableName: "pgs_traits",
+                        indexes: [
+                            "id",
+                            "label",
+                            "description",
+                            "categories",
+                        ],
+                    };
+                }
+            }
+        }
+
+        // Single PGS score (has id starting with PGS and variants_number)
+        if (typeof obj.id === "string" && (obj.id as string).startsWith("PGS") && obj.variants_number !== undefined) {
+            return {
+                tableName: "pgs_score",
+                indexes: ["id", "name", "variants_number"],
+            };
+        }
+
+        // Single PGS publication (has id starting with PGP)
+        if (typeof obj.id === "string" && (obj.id as string).startsWith("PGP") && typeof obj.title === "string") {
+            return {
+                tableName: "pgs_publication",
+                indexes: ["id", "title", "doi"],
             };
         }
 
