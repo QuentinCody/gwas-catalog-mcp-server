@@ -35,6 +35,8 @@ export function registerCodeMode(
     // Register the execute tool (V8 isolate via DynamicWorkerExecutor)
     const executeTool = createExecuteTool({
         prefix: "gwas",
+        // Verifiable provenance: gwas_execute results carry a _meta.citation.
+        source: { id: "gwas", name: "GWAS Catalog", url: "https://www.ebi.ac.uk/gwas" },
         catalog: gwasCatalog,
         apiFetch,
         doNamespace: env.GWAS_DATA_DO,
