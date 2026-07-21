@@ -71,6 +71,40 @@ async function parseResponse(response: Response): Promise<{ status: number; data
 }
 
 /**
+ * Valid `sort` fields per GWAS endpoint. EBI returns HTTP 500 (not 400) for an
+ * unsupported sort, and the shared fetch retries a 500 ~4x (~7s) before it
+ * surfaces. Kept here (not the catalog) because catalog.ts is over the line cap.
+ * Extend as needed.
+ */
+const VALID_SORTS: Record<string, string[]> = {
+    "/v2/studies": ["accession_Id", "snp_count"],
+    "/v2/associations": ["p_value", "risk_frequency", "or_value", "beta_num"],
+    "/v2/snps": ["location", "rs_id"],
+};
+
+/**
+ * Throw a deterministic 400 when `params.sort` is a value the endpoint rejects
+ * with a 500 (#4). Only endpoints listed in VALID_SORTS are enforced; anything
+ * else passes through untouched.
+ */
+export function assertValidSort(
+    path: string,
+    params?: Record<string, unknown>,
+): void {
+    const sort = params?.sort;
+    if (sort === undefined || sort === null || sort === "") return;
+    const allowed = VALID_SORTS[path];
+    if (allowed && !allowed.includes(String(sort))) {
+        // SAFETY: augment a fresh Error with `status`, as parseResponse does above.
+        const err = new Error(
+            `sort '${sort}' is not supported on ${path}; valid sort fields: ${allowed.join(", ")}`,
+        ) as Error & { status: number };
+        err.status = 400;
+        throw err;
+    }
+}
+
+/**
  * Create an ApiFetchFn that routes /pgs/* to PGS Catalog and everything
  * else to the EBI GWAS Catalog REST API. No auth needed — both APIs are
  * publicly accessible.
@@ -78,6 +112,7 @@ async function parseResponse(response: Response): Promise<{ status: number; data
 export function createGwasApiFetch(): ApiFetchFn {
     return async (request) => {
         const isPgs = request.path.startsWith("/pgs/") || request.path === "/pgs";
+        if (!isPgs) assertValidSort(request.path, request.params);
         const response = isPgs
             ? await pgsFetch(request.path, request.params)
             : await gwasFetch(request.path, request.params);
