@@ -10,6 +10,7 @@ import { createSearchTool } from "@bio-mcp/shared/codemode/search-tool";
 import { createExecuteTool } from "@bio-mcp/shared/codemode/execute-tool";
 import { gwasCatalog } from "../spec/catalog";
 import { createGwasApiFetch } from "../lib/api-adapter";
+import { gwasResponse } from "../lib/tool-result";
 
 interface CodeModeEnv {
     GWAS_DATA_DO: DurableObjectNamespace;
@@ -24,13 +25,21 @@ export function registerCodeMode(
     env: CodeModeEnv,
 ): void {
     const apiFetch = createGwasApiFetch();
+    const registrar = { tool: (...args: unknown[]) => {
+        const [name, ...rest] = args;
+        // SAFETY: shared factories provide SDK arguments; the wrapper preserves the handler contract.
+        const register = server.tool.bind(server) as (...values: unknown[]) => void;
+        const handler = rest.pop() as (input: unknown, extra: unknown) => ReturnType<typeof gwasResponse>;
+        const respond = (input: unknown, extra: unknown) => gwasResponse(() => handler(input, extra), env, String(name), extra, input);
+        register(name, ...rest, respond); register(`mcp_${String(name)}`, ...rest, respond);
+    } };
 
     // Register the search tool (in-process, no isolate)
     const searchTool = createSearchTool({
         prefix: "gwas",
         catalog: gwasCatalog,
     });
-    searchTool.register(server as unknown as { tool: (...args: unknown[]) => void });
+    searchTool.register(registrar);
 
     // Register the execute tool (V8 isolate via DynamicWorkerExecutor)
     const executeTool = createExecuteTool({
@@ -39,8 +48,12 @@ export function registerCodeMode(
         source: { id: "gwas", name: "GWAS Catalog", url: "https://www.ebi.ac.uk/gwas" },
         catalog: gwasCatalog,
         apiFetch,
+        preserveApiErrors: true,
+        maxInlineBytes: 30 * 1024,
+        stagingThreshold: 30 * 1024,
+        timeout: 60000,
         doNamespace: env.GWAS_DATA_DO,
         loader: env.CODE_MODE_LOADER,
     });
-    executeTool.register(server as unknown as { tool: (...args: unknown[]) => void });
+    executeTool.register(registrar);
 }

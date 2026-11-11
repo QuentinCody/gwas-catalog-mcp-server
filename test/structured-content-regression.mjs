@@ -83,7 +83,9 @@ if (catalog) {
   assertContains('src/spec/catalog.ts', catalog, 'ApiCatalog', 'catalog uses ApiCatalog type');
   assertContains('src/spec/catalog.ts', catalog, 'gwasCatalog', 'catalog exports gwasCatalog');
   // v2 endpoint paths
-  assertContains('src/spec/catalog.ts', catalog, '/v2/studies', 'catalog has v2 studies endpoint');
+  const studies = assertFileExists('src/spec/studies.ts', 'study catalog module exists');
+  assertContains('src/spec/catalog.ts', catalog, '...studyEndpoints', 'catalog includes study endpoints');
+  assertContains('src/spec/studies.ts', studies, '/v2/studies', 'catalog has v2 studies endpoint');
   assertContains('src/spec/catalog.ts', catalog, '/v2/associations', 'catalog has v2 associations endpoint');
   assertContains('src/spec/catalog.ts', catalog, '/v2/single-nucleotide-polymorphisms', 'catalog has v2 SNPs endpoint');
   assertContains('src/spec/catalog.ts', catalog, '/v2/efo-traits', 'catalog has v2 EFO traits endpoint');

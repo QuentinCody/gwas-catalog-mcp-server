@@ -1,6 +1,7 @@
 import type { McpServer } from "@bio-mcp/shared/mcp";
 import { z } from "zod";
 import { createQueryDataHandler } from "@bio-mcp/shared/staging/utils";
+import { gwasResponse } from "../lib/tool-result";
 
 interface QueryEnv {
     GWAS_DATA_DO?: unknown;
@@ -9,8 +10,8 @@ interface QueryEnv {
 export function registerQueryData(server: McpServer, env?: QueryEnv): void {
     const handler = createQueryDataHandler("GWAS_DATA_DO", "gwas");
 
-    server.registerTool(
-        "gwas_query_data",
+    for (const name of ["gwas_query_data", "mcp_gwas_query_data"]) server.registerTool(
+        name,
         {
             title: "Query Staged GWAS Catalog Data",
             description:
@@ -29,7 +30,6 @@ export function registerQueryData(server: McpServer, env?: QueryEnv): void {
                     .int()
                     .positive()
                     .max(10000)
-                    .default(100)
                     .optional()
                     .describe("Maximum number of rows to return (default: 100)"),
             },
@@ -37,10 +37,10 @@ export function registerQueryData(server: McpServer, env?: QueryEnv): void {
         async (args, extra) => {
             const runtimeEnv =
                 env || (extra as { env?: QueryEnv })?.env || {};
-            return handler(
+            return gwasResponse(() => handler(
                 args as Record<string, unknown>,
                 runtimeEnv as Record<string, unknown>,
-            );
+            ), runtimeEnv, name, extra, args);
         },
     );
 }

@@ -7,15 +7,20 @@
  * and polygenic scores, performance metrics, publications, and traits from
  * the PGS Catalog API.
  *
- * GWAS v2 response format: HAL+JSON with `_embedded.{type}` collections.
+ * GWAS v2 OpenAPI schemas describe `content` arrays (automatic schema inference).
+ * HAL `_embedded.{type}` collections, also observed on live v2, receive hints below.
  * PGS response format: `{ count, next, previous, results: [...] }`.
  */
 
 import { RestStagingDO } from "@bio-mcp/shared/staging/rest-staging-do";
 import type { SchemaHints } from "@bio-mcp/shared/staging/schema-inference";
+import { fileTables, fileSchemaHints } from "./lib/file-staging";
 
 export class GwasDataDO extends RestStagingDO {
+    protected getTabularData(data: unknown): unknown { return fileTables(data) ?? data; }
+
     protected getSchemaHints(data: unknown): SchemaHints | undefined {
+        if (fileTables(data)) return fileSchemaHints;
         if (!data || typeof data !== "object") return undefined;
 
         const obj = data as Record<string, unknown>;
@@ -23,35 +28,8 @@ export class GwasDataDO extends RestStagingDO {
         // HAL-style responses wrap collections in _embedded
         const embedded = obj._embedded as Record<string, unknown> | undefined;
 
-        // Studies: { _embedded: { studies: [...] } }
-        if (embedded && Array.isArray(embedded.studies)) {
-            return {
-                tableName: "studies",
-                indexes: [
-                    "accession_id",
-                    "pubmed_id",
-                    "disease_trait",
-                    "snp_count",
-                ],
-            };
-        }
-
-        // Associations: { _embedded: { associations: [...] } }
-        if (embedded && Array.isArray(embedded.associations)) {
-            return {
-                tableName: "associations",
-                indexes: [
-                    "association_id",
-                    "pvalue_mantissa",
-                    "pvalue_exponent",
-                    "p_value",
-                    "risk_frequency",
-                    "or_per_copy_num",
-                    "beta_num",
-                    "accession_id",
-                ],
-            };
-        }
+        const primary = primaryStudyHints(embedded);
+        if (primary) return primary;
 
         // SNPs: { _embedded: { snps: [...] } }
         if (embedded && Array.isArray(embedded.snps)) {
@@ -299,4 +277,37 @@ export class GwasDataDO extends RestStagingDO {
 
         return undefined;
     }
+}
+
+function primaryStudyHints(embedded: Record<string, unknown> | undefined): SchemaHints | undefined {
+  // Studies: { _embedded: { studies: [...] } }
+  if (embedded && Array.isArray(embedded.studies)) {
+      return {
+          tableName: "studies",
+          indexes: [
+              "accession_id",
+              "pubmed_id",
+              "disease_trait",
+              "snp_count",
+          ],
+      };
+  }
+
+  // Associations: { _embedded: { associations: [...] } }
+  if (embedded && Array.isArray(embedded.associations)) {
+      return {
+          tableName: "associations",
+          indexes: [
+              "association_id",
+              "pvalue_mantissa",
+              "pvalue_exponent",
+              "p_value",
+              "risk_frequency",
+              "or_per_copy_num",
+              "beta_num",
+              "accession_id",
+          ],
+      };
+  }
+
 }
